@@ -75,6 +75,13 @@ func printTasks(tasks []*Task) {
 	}
 }
 
+func getPending() ([]*Task, error) {
+	filter := bson.D{
+		primitive.E{Key: "completed", Value: false},
+	}
+	return filterTasks(filter)
+}
+
 func completeTask(text string) error {
 	filter := bson.D{primitive.E{Key: "text", Value: text}}
 
@@ -84,6 +91,27 @@ func completeTask(text string) error {
 
 	t := &Task{}
 	return collection.FindOneAndUpdate(ctx, filter, update).Decode(t)
+}
+
+func getFinished() ([]*Task, error) {
+	filter := bson.D{
+		primitive.E{Key: "completed", Value: true},
+	}
+	return filterTasks(filter)
+}
+
+func deleteTask(text string) error {
+	filter := bson.D{
+		primitive.E{Key: "text", Value: text},
+	}
+	res, err := collection.DeleteOne(ctx, filter)
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return errors.New("no tasks were deleted")
+	}
+	return nil
 }
 
 var collection *mongo.Collection
@@ -107,6 +135,18 @@ func main() {
 	app := &cli.App{
 		Name:  "tasker",
 		Usage: "A simple CLI program to manage your tasks",
+		Action: func(c *cli.Context) error {
+			tasks, err := getPending()
+			if err != nil {
+				if err == mongo.ErrNoDocuments {
+					fmt.Print("nothing to see here")
+					return nil
+				}
+				return err
+			}
+			printTasks(tasks)
+			return nil
+		},
 		Commands: []*cli.Command{
 			{
 				Name:    "add",
@@ -153,6 +193,35 @@ func main() {
 				Action: func(c *cli.Context) error {
 					text := c.Args().First()
 					return completeTask(text)
+				},
+			},
+			{
+				Name:    "finished",
+				Aliases: []string{"f"},
+				Usage:   "print all finished tasks",
+				Action: func(c *cli.Context) error {
+					tasks, err := getFinished()
+					if err != nil {
+						if err == mongo.ErrNoDocuments {
+							fmt.Print("nothing to see here")
+							return nil
+						}
+						return err
+					}
+					printTasks(tasks)
+					return nil
+				},
+			},
+			{
+				Name:  "rm",
+				Usage: "delete a task",
+				Action: func(c *cli.Context) error {
+					text := c.Args().First()
+					err := deleteTask(text)
+					if err != nil {
+						return err
+					}
+					return nil
 				},
 			},
 		},
